@@ -1,0 +1,48 @@
+# Samler fjernlager fra leverandørerne og lægger Matrixify-filer for .dk og .com på Hetzner.
+# Logikken ligger i fjernlager/build.py, leverandørerne i fjernlager/config.json.
+#
+# Secrets (Settings -> Secrets and variables -> Actions):
+#   HETZNER_HOST / HETZNER_USER / HETZNER_PASS   - jeres Storage Box (mål)
+#   OOS_HOST / OOS_USER / OOS_PASS               - sftpcloud, midlertidig kilde
+#   NP_HOST / NP_USER / NP_PASS                  - NeilPryde, når adapteren er klar
+#
+# Fejler en kørsel (manglende eller mistænkelig leverandørfil), publiceres intet,
+# den forrige fil bliver liggende, og GitHub sender en mail.
+
+name: Fjernlager
+
+on:
+  schedule:
+    - cron: "5 * * * *"      # hver time kl. xx:05 (UTC)
+  workflow_dispatch:
+
+concurrency:
+  group: fjernlager
+  cancel-in-progress: false
+
+jobs:
+  byg:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install openpyxl paramiko
+
+      - name: Byg og publicér
+        working-directory: fjernlager
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_PASS: ${{ secrets.HETZNER_PASS }}
+          OOS_HOST: ${{ secrets.OOS_HOST }}
+          OOS_USER: ${{ secrets.OOS_USER }}
+          OOS_PASS: ${{ secrets.OOS_PASS }}
+          NP_HOST: ${{ secrets.NP_HOST }}
+          NP_USER: ${{ secrets.NP_USER }}
+          NP_PASS: ${{ secrets.NP_PASS }}
+        run: python build.py
