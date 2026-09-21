@@ -1,5 +1,6 @@
 {
-  "_note": "Leverandører lægges sammen pr. stregkode. Slå ALDRIG to kilder til, der indeholder de samme varer (fx oos_bridge og neilpryde) - så tælles lageret dobbelt.",
+  "_note": "Leverandører lægges sammen pr. stregkode. Ny leverandør = ny adapter i build.py + en blok her.",
+  "_note_dk": "Kun .com bruger fjernlager_com.xlsx indtil videre. Når .dk skifter: tilføj \"seed_file\": \"seed_gamle_stregkoder.txt\" og slet fjernlager_state.json på Hetzner, så Nidecker-varerne nulstilles på .dk.",
 
   "max_drop_pct": 30,
   "state_file": "fjernlager_state.json",
@@ -19,23 +20,8 @@
 
   "suppliers": [
     {
-      "name": "oos_bridge",
-      "_note": "Midlertidig: den færdige fil fra sftpcloud, som .dk bruger i dag. Slås fra, når neilpryde er klar.",
-      "enabled": true,
-      "adapter": "matrixify_xlsx",
-      "max_age_hours": 30,
-      "source": {
-        "type": "sftp",
-        "host_secret": "OOS_HOST",
-        "user_secret": "OOS_USER",
-        "pass_secret": "OOS_PASS",
-        "path": "/oos_fjernlager.xlsx"
-      }
-    },
-    {
       "name": "neilpryde",
-      "_note": "Kilden bag Wavos-listen. Adapteren bygges, når formatet er kendt.",
-      "enabled": false,
+      "enabled": true,
       "adapter": "neilpryde",
       "max_age_hours": 30,
       "source": {
@@ -43,7 +29,7 @@
         "host_secret": "NP_HOST",
         "user_secret": "NP_USER",
         "pass_secret": "NP_PASS",
-        "path": "/Reseller/UDFYLDES"
+        "path": "/Reseller/stockinfo/stockinfo_summer_csv.csv"
       }
     }
   ]
