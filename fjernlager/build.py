@@ -48,8 +48,32 @@ def adapter_matrixify_xlsx(path, opts):
 
 
 def adapter_neilpryde(path, opts):
-    """NeilPryde / Wavos. Bygges færdig, når formatet er kendt."""
-    raise NotImplementedError("NeilPryde-adapteren mangler - send en eksempelfil")
+    """NeilPryde-gruppen (Cabrinha, NeilPryde, JP): /Reseller/stockinfo/stockinfo_summer_csv.csv
+    Semikolon-separeret, Windows-tegnsæt. Antal er loftet ved 5 (= "5 eller flere")."""
+    import csv
+    raw = open(path, "rb").read()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        text = raw.decode("cp1252")
+    rows = csv.reader(io.StringIO(text), delimiter=";")
+    header = [h.strip() for h in next(rows)]
+    ix = {h: i for i, h in enumerate(header)}
+    for need in ("EAN/UPC", "EAN", "UPC", "Available Quantity"):
+        if need not in ix:
+            raise SystemExit("NeilPryde har ændret filformat - kolonnen '%s' mangler" % need)
+
+    def cell(r, name):
+        i = ix[name]
+        return r[i].strip() if i < len(r) else ""
+
+    out = []
+    for r in rows:
+        if not any(c.strip() for c in r):
+            continue
+        code = cell(r, "EAN/UPC") or cell(r, "EAN") or cell(r, "UPC")
+        out.append((code, cell(r, "Available Quantity")))
+    return out
 
 
 ADAPTERS = {
@@ -64,6 +88,25 @@ def secret(name):
     if not v:
         raise SystemExit("Mangler secret %s" % name)
     return v
+
+
+def open_sftp(host, port, user, pw):
+    """SFTP-login der virker både med 'password' og 'keyboard-interactive' - FileZilla
+    og Matrixify prøver begge dele automatisk, paramiko gør ikke af sig selv."""
+    import paramiko
+    t = paramiko.Transport((host, int(port)))
+    t.start_client(timeout=30)
+    handler = lambda title, instructions, prompts: [pw for _ in prompts]
+    try:
+        t.auth_password(user, pw)
+    except paramiko.BadAuthenticationType as e:
+        if "keyboard-interactive" not in e.allowed_types:
+            t.close()
+            raise SystemExit("Serveren tillader kun: %s" % ", ".join(e.allowed_types))
+        t.auth_interactive(user, handler)
+    except paramiko.AuthenticationException:
+        t.auth_interactive(user, handler)       # sidste forsøg; fejler med tydelig besked
+    return t, paramiko.SFTPClient.from_transport(t)
 
 
 def fetch(src, dest):
@@ -87,10 +130,7 @@ def fetch(src, dest):
         ftp.quit()
         return mtime
     if kind == "sftp":
-        import paramiko
-        t = paramiko.Transport((host, int(src.get("port", 22))))
-        t.connect(username=user, password=pw)
-        s = paramiko.SFTPClient.from_transport(t)
+        t, s = open_sftp(host, src.get("port", 22), user, pw)
         mtime = dt.datetime.fromtimestamp(s.stat(src["path"]).st_mtime, dt.timezone.utc)
         s.get(src["path"], dest)
         s.close(); t.close()
@@ -99,10 +139,8 @@ def fetch(src, dest):
 
 
 def upload(files, target):
-    import paramiko
-    t = paramiko.Transport((secret(target["host_secret"]), int(target.get("port", 22))))
-    t.connect(username=secret(target["user_secret"]), password=secret(target["pass_secret"]))
-    s = paramiko.SFTPClient.from_transport(t)
+    t, s = open_sftp(secret(target["host_secret"]), target.get("port", 22),
+                     secret(target["user_secret"]), secret(target["pass_secret"]))
     for d in sorted({r.rsplit("/", 1)[0] for _, r in files}):
         try:
             s.mkdir(d)
@@ -122,10 +160,8 @@ def upload(files, target):
 
 def read_remote_state(target, path):
     try:
-        import paramiko
-        t = paramiko.Transport((secret(target["host_secret"]), int(target.get("port", 22))))
-        t.connect(username=secret(target["user_secret"]), password=secret(target["pass_secret"]))
-        s = paramiko.SFTPClient.from_transport(t)
+        t, s = open_sftp(secret(target["host_secret"]), target.get("port", 22),
+                         secret(target["user_secret"]), secret(target["pass_secret"]))
         with s.open(path) as f:
             data = json.loads(f.read().decode("utf-8"))
         s.close(); t.close()
@@ -189,6 +225,17 @@ def main():
         state = read_remote_state(target, state_remote)
     state.setdefault("seen", {})
     state.setdefault("rows", {})
+
+    # Første kørsel: alle stregkoder fra den gamle fil markeres som "set", så de
+    # varer der IKKE er i de nye kilder (fx Nidecker) bliver sat til 0 i stedet
+    # for at stå fastfrosset med gamle tal i Shopify.
+    seed = cfg.get("seed_file")
+    if not state["seen"] and seed and os.path.exists(os.path.join(HERE, seed)):
+        for line in io.open(os.path.join(HERE, seed), encoding="utf-8"):
+            b = clean_barcode(line)
+            if b:
+                state["seen"][b] = NOW.isoformat()
+        vprint("Første kørsel: %d stregkoder fra %s markeret" % (len(state["seen"]), seed))
 
     work = tempfile.mkdtemp()
     merged, per_supplier, errors = {}, {}, []
