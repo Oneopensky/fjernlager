@@ -22,6 +22,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STATE_DAYS = 14
 NOW = dt.datetime.now(dt.timezone.utc)
 
+# Repo'et er offentligt, og det er Actions-loggen også. Derfor logges antal varer,
+# lagertal og filstier kun ved lokal test eller med FJERNLAGER_VERBOSE=1.
+VERBOSE = os.environ.get("FJERNLAGER_VERBOSE") == "1"
+
+
+def vprint(*a):
+    if VERBOSE:
+        print(*a)
+
 
 # ---------------------------------------------------------------- adaptere
 # En adapter tager en lokal filsti og returnerer [(stregkode, antal), ...].
@@ -107,7 +116,7 @@ def upload(files, target):
         except IOError:
             pass
         s.rename(tmp, remote)            # atomisk skift: Matrixify ser aldrig en halv fil
-        print("  uploadet ->", remote)
+        vprint("  uploadet ->", remote)
     s.close(); t.close()
 
 
@@ -164,6 +173,10 @@ def main():
     ap.add_argument("--state", help="lokal state-fil (kun ved lokal test)")
     args = ap.parse_args()
 
+    global VERBOSE
+    if args.out:
+        VERBOSE = True                    # lokal test: vis alt
+
     cfg = json.load(io.open(os.path.join(HERE, "config.json"), encoding="utf-8"))
     local_files = dict(x.split("=", 1) for x in args.local)
     local_mode = bool(args.out)
@@ -193,7 +206,7 @@ def main():
 
             if mtime is not None:
                 age_h = (NOW - mtime).total_seconds() / 3600
-                print("[%s] fil ændret %s (%.0f timer siden)" % (name, mtime.isoformat(), age_h))
+                vprint("[%s] fil ændret %s (%.0f timer siden)" % (name, mtime.isoformat(), age_h))
                 if age_h > sup.get("max_age_hours", 30):
                     errors.append("%s: filen er %.0f timer gammel" % (name, age_h))
                     continue
@@ -210,14 +223,15 @@ def main():
                 stock[b] = max(stock.get(b, 0), clean_qty(qty))
 
             prev = state["rows"].get(name)
-            print("[%s] %d stregkoder (%d uden gyldig stregkode sprunget over), %d stk. på lager, sidst %s"
+            vprint("[%s] %d stregkoder (%d uden gyldig stregkode sprunget over), %d stk. på lager, sidst %s"
                   % (name, len(stock), skipped, sum(stock.values()), prev))
             if not stock:
                 errors.append("%s: filen gav ingen rækker" % name)
                 continue
             if prev and len(stock) < prev * (1 - cfg["max_drop_pct"] / 100.0):
-                errors.append("%s: kun %d rækker mod %d sidst (fald over %d%%)"
-                              % (name, len(stock), prev, cfg["max_drop_pct"]))
+                fald = 100 - len(stock) * 100 // prev
+                errors.append("%s: filen er skrumpet %d%% siden sidst (grænse %d%%)"
+                              % (name, fald, cfg["max_drop_pct"]))
                 continue
 
             per_supplier[name] = len(stock)
@@ -248,7 +262,7 @@ def main():
     state["rows"].update(per_supplier)
     state["last_run"] = NOW.isoformat()
 
-    print("\nSamlet: %d stregkoder, %d stk., heraf %d sat til 0 (forsvundet fra listen)"
+    vprint("\nSamlet: %d stregkoder, %d stk., heraf %d sat til 0 (forsvundet fra listen)"
           % (len(merged), sum(merged.values()), zeroed))
 
     out_dir = args.out or work
@@ -260,7 +274,7 @@ def main():
         write_xlsx(p, o["column"], merged)
         files.append((p, target["dir"] + "/" + o["file"]))
         files.append((p, target["dir"] + "/arkiv/" + stamp + "_" + o["file"]))
-        print("  skrevet", p, "->", o["column"])
+        vprint("  skrevet", p, "->", o["column"])
 
     state_path = os.path.join(out_dir, cfg["state_file"])
     json.dump(state, open(state_path, "w"), indent=1)
@@ -270,6 +284,7 @@ def main():
         return
     files.append((state_path, state_remote))
     upload(files, target)
+    print("OK - fjernlager publiceret for %d kilde(r)" % len(per_supplier))
 
 
 if __name__ == "__main__":
