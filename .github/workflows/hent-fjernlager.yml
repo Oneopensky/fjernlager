@@ -3,8 +3,7 @@
 #
 # Secrets (Settings -> Secrets and variables -> Actions):
 #   HETZNER_HOST / HETZNER_USER / HETZNER_PASS   - jeres Storage Box (mål)
-#   OOS_HOST / OOS_USER / OOS_PASS               - sftpcloud, midlertidig kilde
-#   NP_HOST / NP_USER / NP_PASS                  - NeilPryde, når adapteren er klar
+#   NP_HOST / NP_USER / NP_PASS                  - NeilPryde (Cabrinha, NeilPryde, JP)
 #
 # Fejler en kørsel (manglende eller mistænkelig leverandørfil), publiceres intet,
 # den forrige fil bliver liggende, og GitHub sender en mail.
@@ -39,9 +38,6 @@ jobs:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
           HETZNER_USER: ${{ secrets.HETZNER_USER }}
           HETZNER_PASS: ${{ secrets.HETZNER_PASS }}
-          OOS_HOST: ${{ secrets.OOS_HOST }}
-          OOS_USER: ${{ secrets.OOS_USER }}
-          OOS_PASS: ${{ secrets.OOS_PASS }}
           NP_HOST: ${{ secrets.NP_HOST }}
           NP_USER: ${{ secrets.NP_USER }}
           NP_PASS: ${{ secrets.NP_PASS }}
